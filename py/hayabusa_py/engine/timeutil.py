@@ -89,7 +89,9 @@ def _fixed_offset_text(offset_seconds: int) -> str:
 
 
 def _auto_fraction(nanos: int) -> str:
-    """chrono ``%.f``: 3, 6 or 9 digits depending on precision, with the leading dot."""
+    """chrono ``%.f``: nothing, or 3, 6 or 9 digits depending on precision, with the leading dot."""
+    if nanos == 0:
+        return ""
     if nanos % 1_000_000 == 0:
         return f".{nanos // 1_000_000:03d}"
     if nanos % 1_000 == 0:

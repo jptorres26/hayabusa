@@ -47,11 +47,24 @@ def normalize_evtx_dump(value: Any) -> Any:
     """Map ``evtx_dump`` (evtx crate 0.12) JSON onto the layout Hayabusa's bundled evtx 0.9 fork
     produces: an element that only has text content is emitted by 0.12 as ``{"#text": ...}``
     (e.g. the unnamed ``<Data>`` elements of EventData), whereas 0.9 emits the text/array itself.
+
+    Known, unrecoverable difference: 0.12 emits ``null`` for every empty element, while 0.9
+    distinguishes an empty string value (``""``) from an empty binary value (``null``). It only
+    affects whether an empty field is listed in AllFieldInfo/ExtraFieldInfo.
     """
     if isinstance(value, dict):
         if len(value) == 1 and "#text" in value:
             return normalize_evtx_dump(value["#text"])
-        return {key: normalize_evtx_dump(item) for key, item in value.items()}
+        out = {}
+        for key, item in value.items():
+            if key == "Data" and isinstance(item, dict) and len(item) == 1 and "#text" in item and not isinstance(item["#text"], list):
+                # A single unnamed <Data> element: 0.9 emits a one-element array (an empty one
+                # becomes null), 0.12 collapses it to the bare text.
+                text = item["#text"]
+                out[key] = None if text in ("", None) else [text]
+            else:
+                out[key] = normalize_evtx_dump(item)
+        return out
     if isinstance(value, list):
         return [normalize_evtx_dump(item) for item in value]
     return value

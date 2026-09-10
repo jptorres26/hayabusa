@@ -48,6 +48,46 @@ def load_golden(path: Path) -> tuple[set[tuple], set[tuple], dict[tuple, dict]]:
     return record_keys, agg_keys, rows
 
 
+def render_and_diff(detections, args, rules_dir: Path, config: RulesConfig) -> str:
+    """Render the timeline like ``dfir-timeline -U -O -s -t <fmt> -p <profile> -o file`` and
+    compare it line by line with the golden file (all mode)."""
+    from hayabusa_py.output.config import OutputConfig
+    from hayabusa_py.output.render import render
+    from hayabusa_py.output.writers import render_to_string, sort_key
+
+    fmt = args.render
+    profile = None if args.profile == "standard" else args.profile
+    out_cfg = OutputConfig.load(Path(args.config_dir), rules_dir / "config", profile, time_format=TimeFormatOptions(utc=True, iso_8601=(fmt == "jsonl")), json_timeline=(fmt == "jsonl"), output_to_file=True)
+    t0 = time.perf_counter()
+    infos = [render(det, out_cfg, config.eventkey_alias) for det in detections]
+    infos.sort(key=sort_key)
+    text = render_to_string(infos, fmt)
+    t_render = time.perf_counter() - t0
+    out_path = PY_ROOT / "tests" / "differential" / f"ours.{args.profile}.{fmt}"
+    out_path.write_text(text, encoding="utf-8")
+    golden_name = f"timeline.{args.profile}.{fmt}"
+    golden_path = PY_ROOT / "tests" / "golden" / args.corpus / args.mode / golden_name
+    if not golden_path.exists():
+        return f"## Render: wrote {out_path.name} ({t_render:.1f}s); no golden {golden_name} to compare"
+    golden_lines = golden_path.read_text(encoding="utf-8").splitlines()
+    our_lines = text.splitlines()
+    if args.limit:
+        scanned = {d.record.evtx_filepath for d in detections if d.record is not None}
+        golden_lines = [line for line in golden_lines if any(f'"{name}"' in line or f",\"{name}\"" in line or name in line for name in scanned)]
+    golden_set = Counter(golden_lines)
+    ours_set = Counter(our_lines)
+    same = sum((golden_set & ours_set).values())
+    only_golden = list((golden_set - ours_set).elements())
+    only_ours = list((ours_set - golden_set).elements())
+    identical_order = golden_lines == our_lines
+    lines = [f"## Render {fmt} / {args.profile}: {len(our_lines)} lines in {t_render:.1f}s (golden {len(golden_lines)})"]
+    lines.append(f"- identical lines: {same}; only in golden: {len(only_golden)}; only in ours: {len(only_ours)}; byte-identical order: {identical_order}")
+    for g, o in list(zip(only_golden, only_ours, strict=False))[:6]:
+        lines.append(f"- golden: {g[:400]}")
+        lines.append(f"- ours:   {o[:400]}")
+    return "\n".join(lines)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--rules", required=True)
@@ -57,6 +97,8 @@ def main() -> int:
     parser.add_argument("--report", default=None)
     parser.add_argument("--no-index", action="store_true")
     parser.add_argument("--limit", type=int, default=0, help="only the first N fixture files")
+    parser.add_argument("--render", default=None, choices=["jsonl", "csv"], help="also render the timeline and diff it against the golden file")
+    parser.add_argument("--profile", default="super-verbose")
     args = parser.parse_args()
 
     rules_dir = Path(args.rules)
@@ -75,17 +117,25 @@ def main() -> int:
         fixtures = fixtures[: args.limit]
     ours_records: set[tuple] = set()
     ours_agg: set[tuple] = set()
+    detections = []
     t1 = time.perf_counter()
     for fixture in fixtures:
         rel = fixture.relative_to(PY_ROOT / "tests" / "fixtures" / "records").as_posix()[: -len(".jsonl")]
         for det in detector.scan_records(rel, iter_fixture_records(fixture)):
             record_id = det.record.record.get("Event", {}).get("System", {}).get("EventRecordID")
             ours_records.add((det.rule.rule_id, rel, str(record_id)))
+            if args.render:
+                detections.append(det)
     for det in detector.finish():
         assert det.agg_result is not None
         ours_agg.add((det.rule.rule_id, det.agg_result.agg_record_time_info[0].evtx_file_path if det.agg_result.agg_record_time_info else "", format_time(det.agg_result.start_datetime, False, ISO)))
+        if args.render:
+            detections.append(det)
     t_scan = time.perf_counter() - t1
     stats = detector.stats
+    render_report = ""
+    if args.render:
+        render_report = render_and_diff(detections, args, rules_dir, config)
 
     golden_path = PY_ROOT / "tests" / "golden" / args.corpus / args.mode / "timeline.super-verbose.jsonl"
     gold_records, gold_agg, gold_rows = load_golden(golden_path)
@@ -133,6 +183,9 @@ def main() -> int:
         lines.append(f"- missing {key}")
     for key in sorted(extra)[:10]:
         lines.append(f"- extra   {key}")
+    if render_report:
+        lines.append("")
+        lines.append(render_report)
     report = "\n".join(lines)
     print(report)
     if args.report:
