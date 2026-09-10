@@ -30,3 +30,9 @@ config/critical_systems.txt
 # committing it is never intended. If shared Claude config is ever added to the repo,
 # re-include the specific path with a `!` rule below.
 /.claude/
+
+# hayabusa-py
+py/.venv/
+py/**/__pycache__/
+py/.pytest_cache/
+py/.ruff_cache/
