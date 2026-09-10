@@ -17,6 +17,7 @@ from hayabusa_py.engine.aggregation import (
     compile_aggregation,
     count,
 )
+from hayabusa_py.engine.compiled import compile_node
 from hayabusa_py.engine.condition import ConditionParseError, compile_condition
 from hayabusa_py.engine.matchers import MatcherContext
 from hayabusa_py.engine.selection import (
@@ -70,11 +71,12 @@ class CorrelationType:
 class DetectionNode:
     """``rulenode::DetectionNode``: the compiled ``detection`` section of a rule."""
 
-    __slots__ = ("aggregation_condition", "condition", "name_to_selection", "timeframe")
+    __slots__ = ("aggregation_condition", "compiled", "condition", "name_to_selection", "timeframe")
 
     def __init__(self) -> None:
         self.name_to_selection: dict[str, SelectionNode] = {}
         self.condition: SelectionNode | None = None
+        self.compiled: Callable[[RecordInfo], bool] | None = None
         self.aggregation_condition: AggregationParseInfo | None = None
         self.timeframe: TimeFrameInfo | None = None
 
@@ -95,6 +97,7 @@ class DetectionNode:
         errors = []
         try:
             self.condition = compile_condition(condition, self.name_to_selection)
+            self.compiled = compile_node(self.condition)
         except ConditionParseError as error:
             errors.append(str(error))
         try:
@@ -106,7 +109,11 @@ class DetectionNode:
     def select(self, record: RecordInfo, alias: EventKeyAlias) -> bool:
         if self.condition is None:
             return False
-        return self.condition.select(record, alias)
+        if record.alias is None:
+            record.alias = alias
+        if self.compiled is None:
+            self.compiled = compile_node(self.condition)
+        return self.compiled(record)
 
     def _parse_name_to_selection(self, detection_yaml: Any, ctx: MatcherContext) -> list[str]:
         if not isinstance(detection_yaml, dict):

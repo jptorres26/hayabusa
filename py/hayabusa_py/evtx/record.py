@@ -23,7 +23,7 @@ class RecordInfo:
     to ``None``.
     """
 
-    __slots__ = ("_alias", "_data_string", "evtx_filepath", "key_to_value", "record", "recovered_record")
+    __slots__ = ("_data_string", "_lower", "alias", "evtx_filepath", "key_to_value", "record", "recovered_record")
 
     def __init__(
         self,
@@ -39,7 +39,8 @@ class RecordInfo:
         self._data_string = data_string
         self.key_to_value: dict[str, str | None] = dict(key_to_value) if key_to_value else {}
         self.recovered_record = recovered_record
-        self._alias = alias
+        self.alias = alias
+        self._lower: dict[str, str] = {}
 
     @property
     def data_string(self) -> str:
@@ -48,13 +49,23 @@ class RecordInfo:
             self._data_string = json_compact(self.record)
         return self._data_string
 
+    def lower_value(self, key: str) -> str:
+        """``get_value(key).lower()`` cached per key (the value must exist)."""
+        cache = self._lower
+        lowered = cache.get(key)
+        if lowered is None:
+            value = self.get_value(key)
+            lowered = value.lower() if value is not None else ""
+            cache[key] = lowered
+        return lowered
+
     def get_value(self, key: str) -> str | None:
         cache = self.key_to_value
         if key in cache:
             return cache[key]
-        if self._alias is None:
+        if self.alias is None:
             return None
-        value = get_event_value(key, self.record, self._alias)
+        value = get_event_value(key, self.record, self.alias)
         text = None if value is MISSING else value_to_string(value)
         cache[key] = text
         return text
