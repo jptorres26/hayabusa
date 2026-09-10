@@ -1,0 +1,9 @@
+# hayabusa-py: re-include everything the upstream root .gitignore's broad patterns
+# (hayabusa*, test_*, *.txt, *.json, *.jsonl, *.csv, *.html) would otherwise drop.
+!*
+!**/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
