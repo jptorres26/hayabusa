@@ -457,6 +457,124 @@ def _scope_inline_flags(pattern: str) -> str:
     return "".join(out)
 
 
+class WildcardPattern:
+    """Sigma wildcard pattern (``*`` any run of characters, ``?`` any single character except
+    newline, ``\\`` escapes) matched without regular expressions.
+
+    Equivalent to the regex ``wildcard_to_regex`` produces — ``(?i)`` case-insensitive,
+    ``*`` -> ``(.|\\a|\\f|\\t|\\n|\\r|\\v)*`` (any character), ``?`` -> ``.`` — anchored to the
+    whole value (``^(?:...)$``) or, for whole-record searches, found anywhere. Case folding uses
+    ``str.lower`` on both sides, which agrees with the regex crate's simple case folding for
+    all but a few exotic code points (Kelvin sign, dotless i).
+    """
+
+    __slots__ = ("anchored", "pattern", "segments")
+
+    def __init__(self, pattern: str, anchored: bool = True) -> None:
+        self.pattern = pattern
+        self.anchored = anchored
+        self.segments = _split_wildcard(pattern)
+
+    def search(self, text: str) -> bool:
+        return _wildcard_match(self.segments, text.lower(), self.anchored)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"WildcardPattern({self.pattern!r}, anchored={self.anchored})"
+
+
+# A segment is the text between two ``*``; ``?`` is kept as the QMARK sentinel inside it.
+QMARK = "\0?"
+
+
+def _split_wildcard(pattern: str) -> list[list[str]]:
+    """Tokenize exactly like ``wildcard_to_regex``: ``\\\\*`` -> literal backslash then wildcard,
+    ``\\*`` -> literal ``*``; same for ``?``."""
+    segments: list[list[str]] = [[]]
+    idx = 0
+    length = len(pattern)
+    while idx < length:
+        rest = pattern[idx:]
+        consumed = False
+        for wildcard in ("*", "?"):
+            if rest.startswith("\\\\" + wildcard):
+                segments[-1].append("\\")
+                if wildcard == "*":
+                    segments.append([])
+                else:
+                    segments[-1].append(QMARK)
+                idx += 3
+                consumed = True
+                break
+            if rest.startswith("\\" + wildcard):
+                segments[-1].append(wildcard)
+                idx += 2
+                consumed = True
+                break
+            if rest.startswith(wildcard):
+                if wildcard == "*":
+                    segments.append([])
+                else:
+                    segments[-1].append(QMARK)
+                idx += 1
+                consumed = True
+                break
+        if consumed:
+            continue
+        segments[-1].append(pattern[idx])
+        idx += 1
+    # Lowercase literal characters once; QMARK is left as the sentinel.
+    return [[ch if ch == QMARK else ch.lower() for ch in seg] for seg in segments]
+
+
+def _segment_at(seg: list[str], text: str, pos: int) -> bool:
+    """Does ``seg`` match ``text`` starting at ``pos``?"""
+    end = pos + len(seg)
+    if end > len(text):
+        return False
+    for offset, ch in enumerate(seg):
+        actual = text[pos + offset]
+        if ch == QMARK:
+            if actual == "\n":
+                return False
+        elif actual != ch:
+            return False
+    return True
+
+
+def _find_segment(seg: list[str], text: str, start: int) -> int:
+    """Leftmost position >= start where ``seg`` matches, or -1."""
+    if QMARK not in seg:
+        return text.find("".join(seg), start)
+    last = len(text) - len(seg)
+    for pos in range(start, last + 1):
+        if _segment_at(seg, text, pos):
+            return pos
+    return -1
+
+
+def _wildcard_match(segments: list[list[str]], text: str, anchored: bool) -> bool:
+    if not anchored:
+        # Found anywhere: same as "*pattern*".
+        segments = [[], *segments, []]
+    first, last = segments[0], segments[-1]
+    if len(segments) == 1:
+        return len(text) == len(first) and _segment_at(first, text, 0)
+    if not _segment_at(first, text, 0):
+        return False
+    pos = len(first)
+    for seg in segments[1:-1]:
+        found = _find_segment(seg, text, pos)
+        if found < 0:
+            return False
+        pos = found + len(seg)
+    tail = len(text) - len(last)
+    return tail >= pos and _segment_at(last, text, tail)
+
+
+class TextMatcher:  # pragma: no cover - typing alias for re.Pattern | WildcardPattern
+    def search(self, text: str) -> Any: ...
+
+
 # --------------------------------------------------------------------------------------------
 # Fast matching (fast_match.rs)
 # --------------------------------------------------------------------------------------------
@@ -867,7 +985,7 @@ class DefaultMatcher(LeafMatcher):
     __slots__ = ("fast_match", "key_list", "neg_match", "pipes", "re", "windash_chars")
 
     def __init__(self) -> None:
-        self.re: list[re.Pattern[str]] | None = None
+        self.re: list[TextMatcher] | None = None
         self.fast_match: list[FastMatch] | None = None
         self.pipes: list[PipeElement] = []
         self.key_list: list[str] = []
@@ -943,17 +1061,25 @@ class DefaultMatcher(LeafMatcher):
         if not is_re:
             self.pipes.append(PipeElement(Pipe.WILDCARD))
         is_whole_record_search = not self.key_list or self.key_list[0] == "|all"
-        compiled: list[re.Pattern[str]] = []
+        compiled: list[TextMatcher] = []
         for pattern_str in pattern:
-            regex_str = pattern_str
+            wrapped = pattern_str
             for pipe in self.pipes:
-                regex_str = pipe.pipe_pattern(regex_str)
-            if not is_re and not is_whole_record_search:
-                regex_str = f"^(?:{regex_str})$"
+                if pipe.kind is Pipe.WILDCARD:
+                    continue
+                wrapped = pipe.pipe_pattern(wrapped)
+            if not is_re:
+                # Wildcard patterns are matched by a backtracking-free glob matcher rather than
+                # the regex Rust builds from them (see WildcardPattern); the semantics are the
+                # same, but Python's regex engine is exponential on `*a*b*c*`-style patterns
+                # against long values (PowerShell script blocks), which Rust's linear-time
+                # engine never is.
+                compiled.append(WildcardPattern(wrapped, anchored=not is_whole_record_search))
+                continue
             try:
-                compiled.append(compile_regex(regex_str))
+                compiled.append(compile_regex(wrapped))
             except (re.error, AssertionError, OverflowError):
-                return [f"Cannot parse regex. [regex:{regex_str}, key:{concat_selection_key(key_list)}]"]
+                return [f"Cannot parse regex. [regex:{wrapped}, key:{concat_selection_key(key_list)}]"]
         self.re = compiled
         return []
 

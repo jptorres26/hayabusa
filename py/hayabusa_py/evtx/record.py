@@ -5,30 +5,62 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, field
 from typing import Any
 
-from hayabusa_py.engine.values import get_event_value, json_compact, value_to_string
+from hayabusa_py.engine.values import MISSING, get_event_value, json_compact, value_to_string
 from hayabusa_py.rules.config import EventKeyAlias
 
 _POWERSHELL_CLASSIC_EIDS = {"400", "403", "600", "800"}
 
 
-@dataclass(slots=True)
 class RecordInfo:
-    """One event record plus the pre-extracted string values the rules will look at."""
+    """One event record plus the string values the rules look at.
 
-    evtx_filepath: str
-    record: Any  # the JSON-like record (evtx-crate layout, attributes separated)
-    data_string: str  # compact JSON text of the record (keyword/grep-style rules match this)
-    key_to_value: dict[str, str] = field(default_factory=dict)
-    recovered_record: bool = False
+    ``key_to_value`` is filled eagerly by :func:`create_rec_info` (the Rust behaviour) or
+    lazily, on first lookup, when the record was built with an alias table (the scan path,
+    which avoids resolving hundreds of keys per record that no candidate rule will read).
+    The result is identical: a key resolves to the trimmed scalar text of the record field or
+    to ``None``.
+    """
+
+    __slots__ = ("_alias", "_data_string", "evtx_filepath", "key_to_value", "record", "recovered_record")
+
+    def __init__(
+        self,
+        evtx_filepath: str,
+        record: Any,
+        data_string: str | None = None,
+        key_to_value: dict[str, str] | None = None,
+        recovered_record: bool = False,
+        alias: EventKeyAlias | None = None,
+    ) -> None:
+        self.evtx_filepath = evtx_filepath
+        self.record = record
+        self._data_string = data_string
+        self.key_to_value: dict[str, str | None] = dict(key_to_value) if key_to_value else {}
+        self.recovered_record = recovered_record
+        self._alias = alias
+
+    @property
+    def data_string(self) -> str:
+        """Compact JSON text of the record (keyword/grep-style rules match against it)."""
+        if self._data_string is None:
+            self._data_string = json_compact(self.record)
+        return self._data_string
 
     def get_value(self, key: str) -> str | None:
-        return self.key_to_value.get(key)
+        cache = self.key_to_value
+        if key in cache:
+            return cache[key]
+        if self._alias is None:
+            return None
+        value = get_event_value(key, self.record, self._alias)
+        text = None if value is MISSING else value_to_string(value)
+        cache[key] = text
+        return text
 
 
-def extract_powershell_classic_fields(data: Any, data_index: int, flat_key_to_value: dict[str, str]) -> dict[str, Any] | None:
+def extract_powershell_classic_fields(data: Any, data_index: int, flat_key_to_value: dict[str, Any]) -> dict[str, Any] | None:
     """``field_extract::extract_powershell_classic_fields``: find the EventData ``Data`` array,
     parse element ``data_index`` as ``Key=Value`` lines and merge the pairs next to the array."""
     if isinstance(data, dict):
@@ -57,7 +89,7 @@ def extract_powershell_classic_fields(data: Any, data_index: int, flat_key_to_va
     return None
 
 
-def extract_fields(channel: str | None, event_id: str | None, data: Any, flat_key_to_value: dict[str, str]) -> None:
+def extract_fields(channel: str | None, event_id: str | None, data: Any, flat_key_to_value: dict[str, Any]) -> None:
     """``field_extract::extract_fields``: classic PowerShell events 400/403/600/800 keep their
     useful data as ``Key=Value`` lines inside one ``Data`` array element; surface them as fields."""
     if channel == "Windows PowerShell" and event_id in _POWERSHELL_CLASSIC_EIDS:
@@ -80,7 +112,7 @@ def create_rec_info(
     channel: str | None = None
     for key in keys:
         value = get_event_value(key, data, alias)
-        if value is None:
+        if value is MISSING:
             continue
         text = value_to_string(value)
         if text is None:
@@ -99,4 +131,28 @@ def create_rec_info(
         data_string=json_compact(data),
         key_to_value=flat_key_to_value,
         recovered_record=recovered_record,
+    )
+
+
+def create_lazy_rec_info(
+    data: Any,
+    path: str,
+    alias: EventKeyAlias,
+    *,
+    recovered_record: bool = False,
+    no_pwsh_field_extraction: bool = False,
+) -> RecordInfo:
+    """Scan-path variant of :func:`create_rec_info`: values are resolved on first use."""
+    flat_key_to_value: dict[str, str] = {}
+    if not no_pwsh_field_extraction:
+        system = data.get("Event", {}).get("System", {}) if isinstance(data, dict) else {}
+        if isinstance(system, dict) and system.get("Channel") == "Windows PowerShell":
+            event_id = value_to_string(system.get("EventID"))
+            extract_fields("Windows PowerShell", event_id, data, flat_key_to_value)
+    return RecordInfo(
+        evtx_filepath=path,
+        record=data,
+        key_to_value=flat_key_to_value,
+        recovered_record=recovered_record,
+        alias=alias,
     )
