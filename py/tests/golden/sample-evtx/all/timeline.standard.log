@@ -1,0 +1,193 @@
+Start time: 2026/09/10 12:55
+Total event log files: 599
+Total file size: 132.8 MiB
+
+Loading detection rules. Please wait.
+
+Excluded rules: 26
+Noisy rules: 12 (Disabled)
+
+Deprecated rules: 230 (4.95%) (Disabled)
+Experimental rules: 357 (7.68%)
+Stable rules: 244 (5.25%)
+Test rules: 4,047 (87.07%)
+Unsupported rules: 42 (0.90%) (Disabled)
+
+Correlation rules: 3 (0.06%)
+Correlation referenced rules: 3 (0.06%)
+
+Expand rules: 12 (0.26%)
+Enabled expand rules: 0 (0.00%)
+
+Hayabusa rules: 181
+Sigma rules: 4,467
+Total detection rules: 4,648
+
+Output profile: standard
+
+Scanning in progress. Please wait.
+
+Rule Authors: 
+
+╭─────────────────────────────────────────────────────────────────────╮
+│ Florian Roth (177)                 Nasreddine Bencherchali (123)    │
+│ Zach Mathis (116)                  oscd.community (106)             │
+│ frack113 (89)                      Tim Shelton (33)                 │
+│ Swachchhanda Shrawan Poudel (28)   Daniil Yugoslavskiy (23)         │
+│ Jonhnathan Ribeiro (21)            Teymur Kheirkhabarov (20)        │
+│ Thomas Patzke (20)                 Christian Burkard (18)           │
+│ Markus Neis (18)                   Roberto Rodriguez @Cyb3r... (14) │
+│ Timur Zinniatullin (13)            E.M. Anhaus (12)                 │
+│ Elastic (12)                       Tim Rauch (12)                   │
+│ Michael Haag (11)                  Roberto Rodriguez (11)           │
+│ Samir Bousseaden (11)              Victor Sergeev (8)               │
+│ David ANDRE (7)                    Endgame) (7)                     │
+│ Natalia Shornikova (7)             OTR (7)                          │
+│ Ecco (6)                           X__Junior (6)                    │
+│ Arnim Rupp (5)                     Endgame (5)                      │
+│ Fukusuke Takahashi (5)             JHasenbusch (5)                  │
+│ Sander Wiebing (5)                 omkar72 (5)                      │
+│ @neu5ron (4)                       Andreas Hunkeler (4)             │
+│ Gleb Sukhodolskiy (4)              Max Altgelt (4)                  │
+│ Tobias Michalski (4)               @twjackomo (3)                   │
+│ Anton Kutepov (3)                  Christopher Peacock @sec... (3)  │
+│ Daniel Bohannon (3)                Eric Conrad (3)                  │
+│ FPT.EagleEye (3)                   FPT.EagleEye Team (3)            │
+│ Hieu Tran (3)                      Ilyas Ochkov (3)                 │
+│ Janantha Marasinghe (3)            Nikita Nazarov (3)               │
+│ Tom Ueltschi (3)                   Vasiliy Burov (3)                │
+│ Wojciech Lesicki (3)               Yusuke Matsui (3)                │
+│ elhoim (3)                         juju4 (3)                        │
+│ pH-T (3)                           wagga (3)                        │
+│ @2xxeformyshirt (2)                @SBousseaden (2)                 │
+│ @dreadphones (2)                   Aleksey Potapov (2)              │
+│ Alexandr Yampolskyi (2)            Austin Songer @austinsonger (2)  │
+│ Bartlomiej Czyz (2)                Chakib Gzenayi (2)               │
+│ Cyb3rEng (2)                       D3F7A5105 (2)                    │
+│ Darkrael (2)                       Dave Johnson (2)                 │
+│ Dimitrios Slamaris (2)             Hosni Mribah (2)                 │
+│ Jakob Weinzettl (2)                James Pemberton@4A616D6573 (2)   │
+│ James Pemberton@4A616D65... (2)    Jordan Lloyd (2)                 │
+│ Justin C. (2)                      Karneades (2)                    │
+│ Kutepov Anton (2)                  Liran Ravich (2)                 │
+│ Margaritis Dimitrios (2)           Mark Russinovich (2)             │
+│ Mark Woan (2)                      Modexp (2)                       │
+│ Nik Seetharaman (2)                Oleg Kolesnikov @securon... (2)  │
+│ Perez Diego (2)                    Relativity (2)                   │
+│ Romaissa Adjailia (2)              SCYTHE @scythe_io (2)            │
+│ SOC Prime (2)                      Sean Metcalf (2)                 │
+│ Sreeman (2)                        Tony Lambert (2)                 │
+│ Tony Lambert) (2)                  Vadim Khrykov (2)                │
+│ Vladan Sekulic (2)                 Yassine Oukessou (2)             │
+│ Zach Stanford @svch0st (2)         keepwatch (2)                    │
+│ @Joseliyo_Jstnk (1)                @atc_project (1)                 │
+│ @caliskanfurkan_ (1)               @gott_cyber (1)                  │
+│ @juju4 (1)                         @kostastsale (1)                 │
+│ @oscd_initiative (1)               @scythe_io (1)                   │
+│ @signalblur (1)                    @svch0st (1)                     │
+│ ANosir (1)                         Ahmed Farouk (1)                 │
+│ Alec Costello (1)                  Ali Alwashali (1)                │
+│ Andreas Braathen (1)               Anish Bogati (1)                 │
+│ Austin Songer (1)                  Bartlomiej Czyz @bczyz1 (1)      │
+│ Benjamin Delpy (1)                 Bhabesh Raj (1)                  │
+│ CD_ROM_ (1)                        Cedric MAURUGEON (1)             │
+│ Center for Threat Inform... (1)    Chad Hudson (1)                  │
+│ Christopher Peacock @Sec... (1)    Dan Beavin) (1)                  │
+│ Daniel Koifman (1)                 Dave Kennedy (1)                 │
+│ David Burkett (1)                  David Faiss (1)                  │
+│ David Strassegger (1)              Diego Perez (1)                  │
+│ Dmitriy Lifanov (1)                Dominik Schaudel (1)             │
+│ EagleEye Team (1)                  Fatih Sirin (1)                  │
+│ Furkan CALISKAN (1)                Georg Lauenstein (1)             │
+│ Harish Segar (1)                   Ivan Dyachkov (1)                │
+│ Jack Croock (1)                    James Dickenson (1)              │
+│ James Pemberton @4A616D6573 (1)    Jason Lynch (1)                  │
+│ Jeff Warren (1)                    John Lambert (1)                 │
+│ Jose Rodriguez (1)                 Joseliyo Sanchez (1)             │
+│ Josh Nickels (1)                   Joshua Wright (1)                │
+│ Julia Fomina (1)                   KevTheHermit (1)                 │
+│ MalGamy (1)                        Mangatas Tondang (1)             │
+│ Markus Neis @Karneades (1)         Matt Anderson (1)                │
+│ Matthew Green @mgreen27 (1)        Maxence Fossat (1)               │
+│ Maxim Pavlunin (1)                 Maxime Thiebaut (1)              │
+│ Mustafa Kaan Demir (1)             NVISO (1)                        │
+│ Nextron Systems (1)                Oddvar Moe (1)                   │
+│ Omer Faruk Celik (1)               Open Threat Research (1)         │
+│ Pushkarev Dmitry (1)               SBousseaden (1)                  │
+│ SCYTHE (1)                         Sami Ruohonen (1)                │
+│ Scott Dermott (1)                  Semanur Guneysu @semanurtg (1)   │
+│ Sherif Eldeeb (1)                  Sorina Ionescu (1)               │
+│ Stamatis Chatzimangou (1)          Subhash Popuri (1)               │
+│ Swisscom (1)                       Swisscom CSIRT (1)               │
+│ Teymur Kheirkhabarov @He... (1)    The DFIR Report (1)              │
+│ Timon Hackenjos (1)                Tom Kern (1)                     │
+│ Trent Liffick (1)                  Tuan Le (1)                      │
+│ Zaw Min Htun (1)                   alias support) (1)               │
+│ blueteam0ps (1)                    fuzzyf10w (1)                    │
+│ j4son (1)                          mdecrevoisier (1)                │
+│ rukawa (1)                         vburov (1)                       │
+╰──────────────────────────────────╌──────────────────────────────────╯
+
+Results Summary:
+
+Events with hits / Total events: 19,940 / 47,699 (Data reduction: 27,759 events (58.20%))
+
+Total | Unique detections: 32,447 | 686
+Total | Unique emergency detections: 0 (0.00%) | 0 (0.00%)
+Total | Unique critical detections: 47 (0.14%) | 19 (2.77%)
+Total | Unique high detections: 5,653 (17.42%) | 270 (39.36%)
+Total | Unique medium detections: 2,089 (6.44%) | 246 (35.86%)
+Total | Unique low detections: 6,202 (19.11%) | 83 (12.10%)
+Total | Unique informational detections: 18,456 (56.88%) | 68 (9.91%)
+
+First timestamp: 2009-07-14 04:56:45.074 +00:00
+Last timestamp: 2024-11-22 22:50:25.865 +00:00
+
+First detection: 2013-10-23 16:15:33.531 +00:00
+Last detection: 2024-11-22 22:50:25.445 +00:00
+
+Dates with most total detections:
+emergency: n/a, critical: 2019-07-19 (7), high: 2016-09-19 (3,627), medium: 2019-05-18 (249), low: 2016-09-19 (3,662), informational: 2016-09-03 (2,294)
+
+Top 5 computers with most unique detections:
+emergency: n/a
+critical: MSEDGEWIN10 (8), srvdefender01.offsec.lan (2), DC1.insecurebank.local (1), DESKTOP-PIU87N6 (1), FS03.offsec.lan (1)
+high: MSEDGEWIN10 (108), IEWIN7 (65), FS03.offsec.lan (25), fs03vuln.offsec.lan (25), IE10Win7 (23)
+medium: MSEDGEWIN10 (89), IEWIN7 (58), FS03.offsec.lan (29), fs03vuln.offsec.lan (24), rootdc1.offsec.lan (21)
+low: MSEDGEWIN10 (40), IEWIN7 (21), FS03.offsec.lan (19), fs03vuln.offsec.lan (17), fs01.offsec.lan (11)
+informational: IEWIN7 (18), MSEDGEWIN10 (17), IE10Win7 (16), IE8Win7 (16), PC01.example.corp (15)
+
+╭──────────────────────────────────────────────────────────────────────────────────────╮
+│ Top emergency alerts:                       Top critical alerts:                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ n/a                                         Sticky Key Like Backdoor Usage -... (8)  │
+│ n/a                                         Active Directory Replication fro... (6)  │
+│ n/a                                         CobaltStrike Service Installatio... (6)  │
+│ n/a                                         Defender Alert (Severe) (4)              │
+│ n/a                                         Antivirus - Password Dumper Sign... (3)  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Top high alerts:                            Top medium alerts:                       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Metasploit SMB Authentication (3,562)       Potentially Malicious PwSh (235)         │
+│ Suspicious Service Path (277)               Reg Key Value Set (Sysmon Alert) (107)   │
+│ PowerShell Scripts Installed as ... (250)   Proc Injection (104)                     │
+│ Suspicious Service Installation ... (250)   Remote Thread Creation In Uncomm... (93) │
+│ Suspicious Service Name (80)                Remote Thread Creation Via Power... (93) │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Top low alerts:                             Top informational alerts:                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Logon Failure (Wrong Password) (3,580)      Proc Exec (11,173)                       │
+│ Possible LOLBIN (1,418)                     NetShare File Access (2,564)             │
+│ Non Interactive PowerShell Proce... (326)   PwSh Scriptblock (789)                   │
+│ Proc Access (156)                           PwSh Pipeline Exec (680)                 │
+│ DLL Loaded (Sysmon Alert) (109)             NetShare Access (433)                    │
+╰───────────────────────────────────────────╌──────────────────────────────────────────╯
+
+Saved file: /home/claude/hayabusa/py/tests/golden/sample-evtx/all/timeline.standard.csv (31.7 MiB)
+
+Elapsed time: 00:00:43.1412
+
+Please report any issues with Hayabusa rules to: https://github.com/Yamato-Security/hayabusa-rules/issues
+Please report any false positives with Sigma rules to: https://github.com/SigmaHQ/sigma/issues
+Please submit new Sigma rules with pull requests to: https://github.com/SigmaHQ/sigma/pulls
+
