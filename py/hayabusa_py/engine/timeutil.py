@@ -11,7 +11,7 @@ import calendar
 import re
 import time as _time
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 NANOS = 1_000_000_000
@@ -140,4 +140,4 @@ def format_time(epoch_ns: int, date_only: bool, options: TimeFormatOptions) -> s
 def to_datetime(epoch_ns: int) -> datetime:
     """Microsecond-precision ``datetime`` (UTC) for code that needs one."""
     seconds, nanos = divmod(epoch_ns, NANOS)
-    return datetime.fromtimestamp(seconds, timezone.utc).replace(microsecond=nanos // 1_000)
+    return datetime.fromtimestamp(seconds, UTC).replace(microsecond=nanos // 1_000)

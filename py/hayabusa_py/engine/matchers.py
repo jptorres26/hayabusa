@@ -386,7 +386,75 @@ def compile_regex(pattern: str) -> re.Pattern[str]:
         # "^(?:...)$" -> "\A(?:...)\Z" so that "$" cannot match before a trailing newline.
         assert body.endswith(")$")
         body = "\\A(?:" + body[:-2] + ")\\Z"
-    return re.compile(body, flags)
+    return re.compile(_scope_inline_flags(body), flags)
+
+
+_MID_FLAG_RE = re.compile(r"\(\?([a-zA-Z]+(?:-[a-zA-Z]+)?|-[a-zA-Z]+)\)")
+
+
+def _scope_inline_flags(pattern: str) -> str:
+    """Rewrite Rust-style mid-pattern flag groups ``(?i)`` (which apply from that point to the
+    end of the enclosing group) into Python's scoped form ``(?i:...)``.
+
+    Python only accepts bare ``(?i)`` at the very start of a pattern. Escapes and character
+    classes are skipped so a literal ``(`` never confuses the group tracking.
+    """
+    out: list[str] = []
+    # Stack of open groups; each entry counts how many scoped-flag wrappers must be closed
+    # when that group closes. The bottom entry is the whole pattern.
+    pending = [0]
+    i = 0
+    n = len(pattern)
+    in_class = False
+    while i < n:
+        ch = pattern[i]
+        if ch == "\\" and i + 1 < n:
+            out.append(pattern[i : i + 2])
+            i += 2
+            continue
+        if in_class:
+            if ch == "]":
+                in_class = False
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "[":
+            in_class = True
+            out.append(ch)
+            i += 1
+            # A "]" right after "[" or "[^" is a literal.
+            if i < n and pattern[i] == "^":
+                out.append("^")
+                i += 1
+            if i < n and pattern[i] == "]":
+                out.append("]")
+                i += 1
+            continue
+        if ch == "(":
+            match = _MID_FLAG_RE.match(pattern, i)
+            if match and i > 0:
+                flags = match.group(1).replace("u", "")
+                if flags in ("", "-"):
+                    i = match.end()
+                    continue
+                out.append(f"(?{flags}:")
+                pending[-1] += 1
+                i = match.end()
+                continue
+            pending.append(0)
+            out.append(ch)
+            i += 1
+            continue
+        if ch == ")":
+            closers = pending.pop() if len(pending) > 1 else 0
+            out.append(")" * closers)
+            out.append(ch)
+            i += 1
+            continue
+        out.append(ch)
+        i += 1
+    out.append(")" * pending[0])
+    return "".join(out)
 
 
 # --------------------------------------------------------------------------------------------
