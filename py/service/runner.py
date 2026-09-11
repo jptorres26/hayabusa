@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import time
 from collections import Counter
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -26,14 +27,21 @@ from hayabusa_py.engine.parallel import (
 from hayabusa_py.engine.timeutil import TimeFormatOptions
 from hayabusa_py.output.config import OutputConfig
 from hayabusa_py.output.render import DetectInfo, render
+from hayabusa_py.output.spool import RowSpool, merge_spools
 from hayabusa_py.output.writers import write_csv, write_jsonl
 from hayabusa_py.rules.config import RulesConfig
 from hayabusa_py.rules.loader import LEVELS, RuleFilterOptions
 from service.config import ServiceConfig
-from service.spool import RowSpool
 from service.uploads import StoredUpload, UploadRejected, prepare_inputs
 
 Progress = Callable[[str], None]
+
+
+def _counting(rows: Iterable[DetectInfo], builder: SummaryBuilder) -> Iterator[DetectInfo]:
+    """Pass rows through while the summary counts them, so writing costs only one pass."""
+    for row in rows:
+        builder.add(row)
+        yield row
 
 
 @dataclass(slots=True)
@@ -169,30 +177,40 @@ def run_job(
     fragments = []
     done = 0
     summary_builder = SummaryBuilder()
-    # Rows go straight to disk as each job finishes: an upload's detections can outweigh the
-    # machine's memory, and an out-of-memory kill would take the worker down with the job.
-    with RowSpool(config.work_dir) as spool:
+    spool_paths: list[Path] = []
+    # Neither the workers nor this process hold a whole timeline: each worker writes sorted runs
+    # into the job's spool directory and returns their paths, and the results are written by
+    # merging those runs. An upload's detections can outweigh the machine's memory, and an
+    # out-of-memory kill would take the worker down with the job instead of failing it cleanly.
+    spool_dir = config.work_dir / job_id / "spool"
+    spool_dir.mkdir(parents=True, exist_ok=True)
+    setup.spool_dir = str(spool_dir)
+    try:
         for result in scan_jobs(jobs, setup, workers=workers):
-            summary_builder.add_all(result.rows)
-            spool.add(result.rows)
-            result.rows = []
+            spool_paths.extend(Path(path) for path in result.spool_paths)
             fragments.append(result.countdata)
             log_lines.extend(result.log_lines)
             detector.stats.merge(result.stats)
             if result.error:
                 log_lines.append(f"[ERROR] {result.error}")
             done += 1
-            say(f"scanned {done}/{len(jobs)}")
+            say(f"scanned {done}/{len(jobs)} ({result.row_count:,} detections)")
         merge_countdata(rule_set.rules, fragments)
-        aggregated = [render(det, out_cfg, rules.eventkey_alias) for det in detector.finish()]
-        summary_builder.add_all(aggregated)
-        spool.add(aggregated)
+        tail = RowSpool(spool_dir, own_directory=False)
+        tail.add(render(det, out_cfg, rules.eventkey_alias) for det in detector.finish())
+        spool_paths.extend(tail.paths)
         seconds = time.perf_counter() - started
 
-        say(f"writing {spool.rows:,} rows")
+        say("writing results")
         result_dir.mkdir(parents=True, exist_ok=True)
-        _write_atomic(result_dir / "timeline.jsonl", lambda handle: write_jsonl(handle, spool.merged()))
-        _write_atomic(result_dir / "timeline.csv", lambda handle: write_csv(handle, spool.merged()))
+        # One pass writes the JSONL and builds the summary; a second writes the CSV.
+        def write_timeline(handle: Any) -> None:
+            write_jsonl(handle, _counting(merge_spools(spool_paths), summary_builder))
+
+        _write_atomic(result_dir / "timeline.jsonl", write_timeline)
+        _write_atomic(result_dir / "timeline.csv", lambda handle: write_csv(handle, merge_spools(spool_paths)))
+    finally:
+        shutil.rmtree(spool_dir, ignore_errors=True)
 
     summary = summary_builder.build(detector.stats, files=len(files), seconds=seconds)
     summary["skipped"] = skipped

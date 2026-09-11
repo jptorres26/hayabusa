@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from hayabusa_py.output.render import DetectInfo
+from hayabusa_py.output.spool import RowSpool
 from hayabusa_py.output.writers import sort_key
-from service.spool import RowSpool
 
 
 def row(time: int, level: int = 3, rule: str = "r", record: str = "1") -> DetectInfo:
@@ -43,12 +43,24 @@ def test_merged_order_matches_sorting_in_memory(tmp_path: Path) -> None:
 
 
 def test_rows_and_files_are_counted(tmp_path: Path) -> None:
-    with RowSpool(tmp_path) as spool:
+    with RowSpool(tmp_path, flush_rows=2) as spool:
         assert spool.add([row(1), row(2)]) == 2
         assert spool.add([]) == 0
         spool.add([row(3)])
         assert spool.rows == 3
+        assert spool.files == 1  # two rows flushed, one still buffered
+        spool.flush()
         assert spool.files == 2
+
+
+def test_the_flush_interval_bounds_what_is_held(tmp_path: Path) -> None:
+    """This is the whole point: memory must not grow with the number of detections."""
+    with RowSpool(tmp_path, flush_rows=10) as spool:
+        for n in range(95):
+            spool.write(row(100 - n))
+        assert len(spool._buffer) < 10  # noqa: SLF001 - the buffer size is the property under test
+        assert spool.files == 9
+        assert [info.detected_time for info in spool.merged()] == sorted(100 - n for n in range(95))
 
 
 def test_an_empty_spool_merges_to_nothing(tmp_path: Path) -> None:

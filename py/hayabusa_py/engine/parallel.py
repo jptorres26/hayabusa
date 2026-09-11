@@ -29,6 +29,7 @@ from hayabusa_py.engine.detect import Detection, Detector, ScanStats, load_rule_
 from hayabusa_py.engine.timeutil import TimeFormatOptions
 from hayabusa_py.output.config import OutputConfig
 from hayabusa_py.output.render import DetectInfo, render
+from hayabusa_py.output.spool import RowSpool
 from hayabusa_py.rules.config import RulesConfig
 from hayabusa_py.rules.loader import RuleFilterOptions
 
@@ -56,6 +57,11 @@ class WorkerSetup:
     time_format: TimeFormatOptions = field(default_factory=TimeFormatOptions)
     json_timeline: bool = False
     reader: str = "evtx"  # "evtx" | "json" | "fixture"
+    # When set, a worker writes its rendered rows into sorted run files under this directory and
+    # returns their paths instead of the rows themselves, so neither the worker nor the parent
+    # holds a whole timeline (see hayabusa_py.output.spool).
+    spool_dir: str = ""
+    spool_flush_rows: int = 20_000
     # Rule files the parent kept after the channel filter; None means "keep everything the
     # loader returns". Without this a worker would scan with rules the parent had pruned.
     keep_rule_paths: frozenset[str] | None = None
@@ -69,9 +75,12 @@ class WorkerSetup:
 
 @dataclass(slots=True)
 class JobResult:
-    """What one job produced: rendered rows, aggregation state to merge, stats, log lines."""
+    """What one job produced: rendered rows (or the spool files holding them), aggregation state
+    to merge, stats and log lines."""
 
     rows: list[DetectInfo] = field(default_factory=list)
+    spool_paths: list[str] = field(default_factory=list)
+    row_count: int = 0
     countdata: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
     stats: ScanStats = field(default_factory=ScanStats)
     log_lines: list[str] = field(default_factory=list)
@@ -133,11 +142,28 @@ class _Engine:
         self.log_lines.clear()
         self.detector.stats = ScanStats()
         result = JobResult()
+        spool = None
+        if self.setup.spool_dir:
+            spool = RowSpool(
+                Path(self.setup.spool_dir),
+                flush_rows=self.setup.spool_flush_rows,
+                own_directory=False,
+            )
         try:
+            alias = self.config.eventkey_alias
             for detection in self.detector.scan_records(job.display_path, self.read(job)):
-                result.rows.append(render(detection, self.out_cfg, self.config.eventkey_alias))
+                row = render(detection, self.out_cfg, alias)
+                if spool is not None:
+                    spool.write(row)
+                else:
+                    result.rows.append(row)
         except EvtxReadError as exc:
             result.error = str(exc)
+        if spool is not None:
+            result.spool_paths = [str(path) for path in spool.paths]
+            result.row_count = spool.rows
+        else:
+            result.row_count = len(result.rows)
         result.stats = self.detector.stats
         result.log_lines = list(self.log_lines)
         result.countdata = {
