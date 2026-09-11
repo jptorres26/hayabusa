@@ -96,17 +96,14 @@ def create_app(config: ServiceConfig | None = None) -> FastAPI:
         )
         destination = config.job_upload_dir(job.id) / "upload.bin"
         try:
+            _check_declared_length(request, config.max_upload_bytes)
             stored = await store_async_stream(
                 _stream(file), destination, max_bytes=config.max_upload_bytes, filename=file.filename or ""
             )
         except UploadRejected as exc:
             store.fail(job.id, str(exc))
             return _problem(request, str(exc), status=413 if "larger than" in str(exc) else 400)
-        with store._connect() as conn:  # noqa: SLF001 - the store is this module's own
-            conn.execute(
-                "UPDATE jobs SET size_bytes = ?, sha256 = ? WHERE id = ?",
-                (stored.size_bytes, stored.sha256, job.id),
-            )
+        store.record_upload(job.id, size_bytes=stored.size_bytes, sha256=stored.sha256)
         audit.info(
             "job=%s accepted file=%s bytes=%d sha256=%s by=%s",
             job.id, stored.display_name, stored.size_bytes, stored.sha256, job.submitted_by,
@@ -159,6 +156,20 @@ async def _stream(file: UploadFile, chunk_size: int = 1024 * 1024):  # noqa: ANN
         if not chunk:
             return
         yield chunk
+
+
+def _check_declared_length(request: Request, max_bytes: int) -> None:
+    """Refuse an over-sized upload from its Content-Length, before the body is read.
+
+    The body cap in ``store_async_stream`` is the real limit, but by the time the endpoint runs,
+    the framework has already spooled the whole part to a temporary file. Checking the declared
+    length first turns the common case into an immediate refusal. It is not a complete defence --
+    a chunked upload declares no length -- so the reverse proxy in front of this service must
+    also cap request bodies (see docs/deployment.md).
+    """
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > max_bytes + (1024 * 1024):
+        raise UploadRejected(f"the upload is larger than the {max_bytes // 1024**2} MB limit")
 
 
 def _identity(request: Request, submitted_by: str) -> str:
@@ -246,11 +257,28 @@ def _problem(request: Request, message: str, *, status: int) -> Any:
 app = create_app()
 
 
+def configure_logging(config: ServiceConfig) -> None:
+    """Send the audit log to a file as well as the console.
+
+    An audit line that is only written to a console nobody reads is not an audit line, so this
+    runs whether the app is started through ``main`` or by an external uvicorn.
+    """
+    log_dir = Path(config.data_dir) / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(log_dir / "audit.log", encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+    audit.setLevel(logging.INFO)
+    if not any(isinstance(existing, logging.FileHandler) for existing in audit.handlers):
+        audit.addHandler(handler)
+    audit.propagate = True
+
+
 def main() -> int:  # pragma: no cover - the console entry point
     import uvicorn
 
     config = ServiceConfig.from_env()
     config.ensure_dirs()
+    configure_logging(config)
     uvicorn.run("service.app:app", host="127.0.0.1", port=8000, workers=1)
     return 0
 
@@ -274,4 +302,11 @@ def _ago(value: float | None) -> str:
     return f"{seconds // 86400}d ago"
 
 
-__all__ = ["app", "create_app", "db", "main"]
+try:  # pragma: no cover - depends on the environment the app is started in
+    configure_logging(ServiceConfig.from_env())
+except OSError:
+    # A read-only or missing data directory must not stop the app from starting; the console
+    # handler still gets the audit lines.
+    logging.basicConfig(level=logging.INFO)
+
+__all__ = ["app", "configure_logging", "create_app", "db", "main"]

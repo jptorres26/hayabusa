@@ -21,9 +21,15 @@ days you keep it. Keep it off the system drive.
 
 **Who can reach the site.** The application has no login. It is designed to sit behind the
 reverse proxy or gateway that already authenticates staff, and it listens on `127.0.0.1` so it
-cannot be reached any other way. The proxy must pass the authenticated identity in an
-`X-Forwarded-User` header; that is what the audit line records. Without the header the service
-still works, but every job is attributed to `(unknown)`.
+cannot be reached any other way. The proxy must do two things for it:
+
+- pass the authenticated identity in an `X-Forwarded-User` header — that is what the audit line
+  records; without it the service still works, but every job is attributed to `(unknown)`;
+- cap the request body at or below the upload limit (2 GB by default). The application enforces
+  its own cap while the body streams and refuses an over-sized `Content-Length` outright, but the
+  web framework spools a multipart body to a temporary file before the application sees it, so
+  the proxy is the right place to stop an absurd upload. In IIS that is
+  `requestLimits maxAllowedContentLength`; in nginx, `client_max_body_size`.
 
 **How long results are kept.** `-RetentionDays` on the installer, default 30. This is a data
 retention decision, not a technical one — involve whoever owns that policy.

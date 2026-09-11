@@ -298,7 +298,7 @@ def prepare_inputs(stored: StoredUpload, work_dir: Path, config) -> tuple[list[P
             work_dir,
             max_members=config.max_members,
             max_member_bytes=config.max_member_bytes,
-            max_total_bytes=config.max_member_bytes,
+            max_total_bytes=config.max_total_bytes,
             max_expansion_ratio=config.max_expansion_ratio,
         )
         return extracted.files, extracted.skipped

@@ -237,3 +237,32 @@ def test_a_zip_upload_is_accepted_for_scanning(client: TestClient, store: JobSto
     response = upload(client, buffer.getvalue(), name="logs.zip", headers=JSON)
     assert response.status_code == 202
     assert store.get(response.json()["job"]).filename == "logs.zip"
+
+
+def test_a_declared_oversize_length_is_refused_before_the_body_is_read(client: TestClient) -> None:
+    """The common case should be refused from the header, not after spooling gigabytes."""
+    response = client.post(
+        "/jobs",
+        content=b"x" * 100,
+        headers={**JSON, "content-length": "100", "x-test": "1"},
+    )
+    # a well-formed but tiny body still fails validation; the point of the next call is the header
+    assert response.status_code in (400, 413, 422)
+
+    big = client.post(
+        "/jobs",
+        files={"file": ("a.evtx", io.BytesIO(evtx()), "application/octet-stream")},
+        headers={**JSON, "content-length": str(10 * 1024**3)},
+    )
+    assert big.status_code == 413
+
+
+def test_the_audit_log_records_the_upload(client: TestClient, caplog) -> None:
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="hayabusa_py.audit"):
+        upload(client, evtx(), name="Security.evtx", headers=JSON)
+    line = "\n".join(record.getMessage() for record in caplog.records)
+    assert "accepted" in line
+    assert "Security.evtx" in line
+    assert "sha256=" in line

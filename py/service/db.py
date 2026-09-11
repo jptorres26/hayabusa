@@ -189,6 +189,13 @@ class JobStore:
             claimed = conn.execute("SELECT * FROM jobs WHERE id = ?", (row["id"],)).fetchone()
         return _row_to_job(claimed)
 
+    def record_upload(self, job_id: str, *, size_bytes: int, sha256: str) -> None:
+        """Fill in what is only known once the upload has finished streaming."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE jobs SET size_bytes = ?, sha256 = ? WHERE id = ?", (size_bytes, sha256, job_id)
+            )
+
     def heartbeat(self, job_id: str) -> None:
         with self._connect() as conn:
             conn.execute("UPDATE jobs SET heartbeat_at = ? WHERE id = ?", (time.time(), job_id))

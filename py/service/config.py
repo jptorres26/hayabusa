@@ -37,6 +37,7 @@ class ServiceConfig:
     # a 2 GB archive of a few 500 MB channels.
     max_upload_bytes: int = 2 * 1024**3
     max_member_bytes: int = 4 * 1024**3
+    max_total_bytes: int = 8 * 1024**3  # everything one archive may expand to, together
     max_members: int = 200
     max_expansion_ratio: int = 200  # uncompressed / compressed, a zip-bomb guard
 
@@ -57,6 +58,7 @@ class ServiceConfig:
             config_dir=Path(_env("CONFIG_DIR", "config")),
             max_upload_bytes=_env_int("MAX_UPLOAD_BYTES", 2 * 1024**3),
             max_member_bytes=_env_int("MAX_MEMBER_BYTES", 4 * 1024**3),
+            max_total_bytes=_env_int("MAX_TOTAL_BYTES", 8 * 1024**3),
             max_members=_env_int("MAX_MEMBERS", 200),
             max_expansion_ratio=_env_int("MAX_EXPANSION_RATIO", 200),
             workers=_env_int("WORKERS", 0),
