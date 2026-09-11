@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block body %}
+<form class="upload" method="post" action="/jobs" enctype="multipart/form-data">
+  <p><strong>Upload a Windows event log</strong> — a single <code>.evtx</code>, or a <code>.zip</code> of them.
+     Export them with <code>wevtutil epl &lt;channel&gt; &lt;file&gt;.evtx</code> or with
+     <code>Export-WinEvtx.ps1</code> from the share library.</p>
+  <label for="file">Log file</label>
+  <input id="file" type="file" name="file" accept=".evtx,.zip" required>
+  <label for="submitted_by">Case or ticket reference (optional)</label>
+  <input id="submitted_by" type="text" name="submitted_by" placeholder="INC0012345">
+  <button type="submit">Upload and scan</button>
+</form>
+
+<h2>Recent jobs</h2>
+{% if jobs %}
+<table>
+  <tr><th>Submitted</th><th>File</th><th class="num">Size (MB)</th><th>State</th><th class="num">Detections</th><th>Reference</th></tr>
+  {% for job in jobs %}
+  <tr>
+    <td><a href="/jobs/{{ job.id }}">{{ job.created_at|ago }}</a></td>
+    <td>{{ job.filename }}</td>
+    <td class="num">{{ job.size_bytes|mb }}</td>
+    <td><span class="state {{ job.state }}">{{ job.state }}</span></td>
+    <td class="num">{% if job.summary %}{{ job.summary.detections }}{% else %}-{% endif %}</td>
+    <td class="muted">{{ job.submitted_by }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="muted">No jobs yet.</p>
+{% endif %}
+{% endblock %}

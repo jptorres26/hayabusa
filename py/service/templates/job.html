@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Job {{ job.id[:8] }} — Hayabusa timeline service{% endblock %}
+{% block head %}{% if job.state in ("queued", "running") %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block body %}
+<h2>Job {{ job.id[:8] }} <span class="state {{ job.state }}">{{ job.state }}</span></h2>
+<table>
+  <tr><th>File</th><td>{{ job.filename }} ({{ job.size_bytes|mb }} MB)</td></tr>
+  <tr><th>SHA-256</th><td><code>{{ job.sha256 }}</code></td></tr>
+  <tr><th>Submitted</th><td>{{ job.created_at|stamp }} UTC by {{ job.submitted_by }}</td></tr>
+  {% if job.started_at %}<tr><th>Started</th><td>{{ job.started_at|stamp }} UTC</td></tr>{% endif %}
+  {% if job.finished_at %}<tr><th>Finished</th><td>{{ job.finished_at|stamp }} UTC</td></tr>{% endif %}
+</table>
+
+{% if job.state in ("queued", "running") %}
+  <p class="muted">This page refreshes every 5 seconds. A large log can take several minutes.</p>
+  {% if job.state == "queued" %}
+  <form method="post" action="/jobs/{{ job.id }}/cancel"><button type="submit">Cancel</button></form>
+  {% endif %}
+{% endif %}
+
+{% if job.error %}<p class="err">{{ job.error }}</p>{% endif %}
+
+{% if job.summary %}
+<h2>Summary</h2>
+<table>
+  <tr><th>Files scanned</th><td class="num">{{ job.summary.files }}</td></tr>
+  <tr><th>Events</th><td class="num">{{ "{:,}".format(job.summary.events) }}</td></tr>
+  <tr><th>Events with hits</th><td class="num">{{ "{:,}".format(job.summary.events_with_hits) }}</td></tr>
+  <tr><th>Detections</th><td class="num">{{ "{:,}".format(job.summary.detections) }} ({{ job.summary.unique_detections }} unique)</td></tr>
+  <tr><th>Scan time</th><td class="num">{{ job.summary.scan_seconds }}s</td></tr>
+</table>
+
+{% if job.summary.by_level %}
+<h2>By level</h2>
+<table>
+  <tr><th>Level</th><th class="num">Detections</th></tr>
+  {% for level, count in job.summary.by_level.items() %}
+  <tr><td>{{ level }}</td><td class="num">{{ "{:,}".format(count) }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if job.summary.top_rules %}
+<h2>Top rules</h2>
+<table>
+  <tr><th>Rule</th><th class="num">Detections</th></tr>
+  {% for title, count in job.summary.top_rules %}
+  <tr><td>{{ title }}</td><td class="num">{{ "{:,}".format(count) }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if job.summary.skipped %}
+<h2>Skipped</h2>
+<ul class="muted">{% for entry in job.summary.skipped %}<li>{{ entry }}</li>{% endfor %}</ul>
+{% endif %}
+{% endif %}
+
+{% if results %}
+<h2>Results</h2>
+<ul>
+  {% for name, size in results %}
+  <li><a href="/jobs/{{ job.id }}/files/{{ name }}">{{ name }}</a> <span class="muted">({{ size|mb }} MB)</span></li>
+  {% endfor %}
+</ul>
+{% endif %}
+<p><a href="/">&larr; All jobs</a></p>
+{% endblock %}
