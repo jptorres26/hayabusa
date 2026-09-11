@@ -10,7 +10,7 @@ import json
 import os
 import time
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -26,10 +26,11 @@ from hayabusa_py.engine.parallel import (
 from hayabusa_py.engine.timeutil import TimeFormatOptions
 from hayabusa_py.output.config import OutputConfig
 from hayabusa_py.output.render import DetectInfo, render
-from hayabusa_py.output.writers import sort_key, write_csv, write_jsonl
+from hayabusa_py.output.writers import write_csv, write_jsonl
 from hayabusa_py.rules.config import RulesConfig
 from hayabusa_py.rules.loader import LEVELS, RuleFilterOptions
 from service.config import ServiceConfig
+from service.spool import RowSpool
 from service.uploads import StoredUpload, UploadRejected, prepare_inputs
 
 Progress = Callable[[str], None]
@@ -51,32 +52,52 @@ def _write_atomic(path: Path, write: Callable[[Any], None]) -> None:
     os.replace(temp, path)
 
 
-def summarise(rows: list[DetectInfo], stats: ScanStats, *, files: int, seconds: float) -> dict[str, Any]:
-    """The numbers the results page shows, and the ones a technician reports upward."""
-    by_level = Counter()
-    unique: set[tuple[int, str]] = set()
-    by_rule: Counter[str] = Counter()
-    by_computer: Counter[str] = Counter()
-    for info in rows:
+class SummaryBuilder:
+    """Accumulates the summary a row at a time, so the rows need not be kept."""
+
+    __slots__ = ("by_computer", "by_level", "by_rule", "count", "unique")
+
+    def __init__(self) -> None:
+        self.by_level: Counter[str] = Counter()
+        self.by_rule: Counter[str] = Counter()
+        self.by_computer: Counter[str] = Counter()
+        self.unique: set[tuple[int, str]] = set()
+        self.count = 0
+
+    def add(self, info: DetectInfo) -> None:
+        self.count += 1
         # LEVELS is ascending (informational..emergency) and info.level is 1-based.
         level_name = LEVELS[info.level - 1] if 1 <= info.level <= 6 else "undefined"
-        by_level[level_name] += 1
-        unique.add((info.level, info.ruleid))
-        by_rule[info.ruletitle] += 1
+        self.by_level[level_name] += 1
+        self.unique.add((info.level, info.ruleid))
+        self.by_rule[info.ruletitle] += 1
         if info.computername:
-            by_computer[info.computername] += 1
-    return {
-        "files": files,
-        "events": stats.events,
-        "events_with_hits": stats.events_with_hits,
-        "detections": len(rows),
-        "unique_detections": len(unique),
-        "by_level": {level: by_level[level] for level in reversed(LEVELS) if by_level.get(level)},
-        "top_rules": by_rule.most_common(20),
-        "top_computers": by_computer.most_common(20),
-        "scan_seconds": round(seconds, 1),
-        "cpu_seconds": round(stats.seconds, 1),
-    }
+            self.by_computer[info.computername] += 1
+
+    def add_all(self, rows: Iterable[DetectInfo]) -> None:
+        for info in rows:
+            self.add(info)
+
+    def build(self, stats: ScanStats, *, files: int, seconds: float) -> dict[str, Any]:
+        return {
+            "files": files,
+            "events": stats.events,
+            "events_with_hits": stats.events_with_hits,
+            "detections": self.count,
+            "unique_detections": len(self.unique),
+            "by_level": {level: self.by_level[level] for level in reversed(LEVELS) if self.by_level.get(level)},
+            "top_rules": self.by_rule.most_common(20),
+            "top_computers": self.by_computer.most_common(20),
+            "scan_seconds": round(seconds, 1),
+            "cpu_seconds": round(stats.seconds, 1),
+        }
+
+
+def summarise(rows: list[DetectInfo], stats: ScanStats, *, files: int, seconds: float) -> dict[str, Any]:
+    """The numbers the results page shows, and the ones a technician reports upward."""
+    builder = SummaryBuilder()
+    builder.add_all(rows)
+    return builder.build(stats, files=files, seconds=seconds)
 
 
 def run_job(
@@ -126,7 +147,6 @@ def run_job(
 
     say(f"scanning with {workers} process(es)")
     started = time.perf_counter()
-    rows: list[DetectInfo] = []
     setup = WorkerSetup(
         rules_path=str(config.rules_dir),
         rules_config_dir=str(rules_config_dir),
@@ -148,25 +168,33 @@ def run_job(
     )
     fragments = []
     done = 0
-    for result in scan_jobs(jobs, setup, workers=workers):
-        rows.extend(result.rows)
-        fragments.append(result.countdata)
-        log_lines.extend(result.log_lines)
-        detector.stats.merge(result.stats)
-        if result.error:
-            log_lines.append(f"[ERROR] {result.error}")
-        done += 1
-        say(f"scanned {done}/{len(jobs)}")
-    merge_countdata(rule_set.rules, fragments)
-    rows.extend(render(det, out_cfg, rules.eventkey_alias) for det in detector.finish())
-    rows.sort(key=sort_key)
-    seconds = time.perf_counter() - started
+    summary_builder = SummaryBuilder()
+    # Rows go straight to disk as each job finishes: an upload's detections can outweigh the
+    # machine's memory, and an out-of-memory kill would take the worker down with the job.
+    with RowSpool(config.work_dir) as spool:
+        for result in scan_jobs(jobs, setup, workers=workers):
+            summary_builder.add_all(result.rows)
+            spool.add(result.rows)
+            result.rows = []
+            fragments.append(result.countdata)
+            log_lines.extend(result.log_lines)
+            detector.stats.merge(result.stats)
+            if result.error:
+                log_lines.append(f"[ERROR] {result.error}")
+            done += 1
+            say(f"scanned {done}/{len(jobs)}")
+        merge_countdata(rule_set.rules, fragments)
+        aggregated = [render(det, out_cfg, rules.eventkey_alias) for det in detector.finish()]
+        summary_builder.add_all(aggregated)
+        spool.add(aggregated)
+        seconds = time.perf_counter() - started
 
-    say("writing results")
-    result_dir.mkdir(parents=True, exist_ok=True)
-    _write_atomic(result_dir / "timeline.jsonl", lambda handle: write_jsonl(handle, rows))
-    _write_atomic(result_dir / "timeline.csv", lambda handle: write_csv(handle, rows))
-    summary = summarise(rows, detector.stats, files=len(files), seconds=seconds)
+        say(f"writing {spool.rows:,} rows")
+        result_dir.mkdir(parents=True, exist_ok=True)
+        _write_atomic(result_dir / "timeline.jsonl", lambda handle: write_jsonl(handle, spool.merged()))
+        _write_atomic(result_dir / "timeline.csv", lambda handle: write_csv(handle, spool.merged()))
+
+    summary = summary_builder.build(detector.stats, files=len(files), seconds=seconds)
     summary["skipped"] = skipped
     _write_atomic(result_dir / "summary.json", lambda handle: json.dump(summary, handle, indent=2))
     if log_lines:
