@@ -7,3 +7,8 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.pyc
+
+# runtime artefacts: the service's data directory and stray harness output
+data/
+hayabusa-timeline.jsonl
+perf-report.json

@@ -257,13 +257,19 @@ def _problem(request: Request, message: str, *, status: int) -> Any:
 app = create_app()
 
 
-def configure_logging(config: ServiceConfig) -> None:
+def configure_logging(config: ServiceConfig, *, create: bool = True) -> None:
     """Send the audit log to a file as well as the console.
 
     An audit line that is only written to a console nobody reads is not an audit line, so this
-    runs whether the app is started through ``main`` or by an external uvicorn.
+    runs whether the app is started through ``main`` or by an external uvicorn. With
+    ``create=False`` it attaches the file handler only if the data directory already exists,
+    which is what importing the module does -- importing a module should never create
+    directories in whatever happened to be the working directory.
     """
     log_dir = Path(config.data_dir) / "logs"
+    if not create and not log_dir.parent.is_dir():
+        audit.setLevel(logging.INFO)
+        return
     log_dir.mkdir(parents=True, exist_ok=True)
     handler = logging.FileHandler(log_dir / "audit.log", encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
@@ -303,7 +309,7 @@ def _ago(value: float | None) -> str:
 
 
 try:  # pragma: no cover - depends on the environment the app is started in
-    configure_logging(ServiceConfig.from_env())
+    configure_logging(ServiceConfig.from_env(), create=False)
 except OSError:
     # A read-only or missing data directory must not stop the app from starting; the console
     # handler still gets the audit lines.

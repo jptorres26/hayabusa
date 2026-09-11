@@ -23,6 +23,7 @@ import platform
 import resource
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -165,7 +166,8 @@ def main() -> int:
     rows = [run_python(args, files, workers) for workers in args.workers]
     baseline = None
     if args.hayabusa and args.evtx_dir:
-        baseline = run_hayabusa(args.hayabusa, args.evtx_dir, Path("."))
+        with tempfile.TemporaryDirectory(prefix="hayabusa-perf-") as scratch:
+            baseline = run_hayabusa(args.hayabusa, args.evtx_dir, Path(scratch))
 
     lines = [
         "# hayabusa-py throughput",
