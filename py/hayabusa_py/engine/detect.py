@@ -99,6 +99,19 @@ class ScanStats:
     rules_evaluated: int = 0
     seconds: float = 0.0
 
+    def merge(self, other: ScanStats) -> None:
+        """Fold in another scan's totals (the parallel scan merges its workers').
+
+        ``seconds`` becomes the summed CPU time across workers, not wall-clock: the caller
+        measures elapsed time itself, and the sum is what says how much work was done.
+        """
+        self.files += other.files
+        self.events += other.events
+        self.events_with_hits += other.events_with_hits
+        self.detections += other.detections
+        self.rules_evaluated += other.rules_evaluated
+        self.seconds += other.seconds
+
 
 class Detector:
     """Evaluates a :class:`RuleSet` against records and collects detections.

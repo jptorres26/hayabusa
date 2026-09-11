@@ -19,6 +19,13 @@ from pathlib import Path
 from typing import Any
 
 from hayabusa_py.engine.detect import Detection, Detector, RuleSet, load_rule_set
+from hayabusa_py.engine.parallel import (
+    WorkerSetup,
+    merge_countdata,
+    scan_jobs,
+    split_jobs,
+    worker_count,
+)
 from hayabusa_py.engine.timeutil import TimeFormatOptions
 from hayabusa_py.evtx.errors import EvtxReadError
 from hayabusa_py.evtx.jsonl_reader import (
@@ -27,7 +34,7 @@ from hayabusa_py.evtx.jsonl_reader import (
     normalize_json_input,
 )
 from hayabusa_py.output.config import OutputConfig
-from hayabusa_py.output.render import render
+from hayabusa_py.output.render import DetectInfo, render
 from hayabusa_py.output.writers import (
     duplicate_indices,
     sort_key,
@@ -82,6 +89,24 @@ def make_reader(args: argparse.Namespace, log: Callable[[str], None] = lambda _l
 
         return read_evtx, {"evtx"} | set(args.target_file_ext or [])
     raise SystemExit("[ERROR] Reading .evtx files needs the Windows Event Log API; on this platform use -J (JSON input) or --evtx-jsonl.")
+
+
+def reader_kind(args: argparse.Namespace) -> str:
+    """Which reader the worker processes should build (see ``parallel.WorkerSetup``)."""
+    if args.evtx_jsonl:
+        return "fixture"
+    if args.json_input:
+        return "json"
+    return "evtx"
+
+
+def _record_counter() -> Callable[[str], int] | None:
+    """``record_count`` when the Windows reader is available, else None (no range splitting)."""
+    if sys.platform != "win32":
+        return None
+    from hayabusa_py.evtx.wevtapi_reader import record_count
+
+    return record_count
 
 
 def peek_channel(reader: Callable[[Path], Iterator[Any]], path: Path) -> str | None:
@@ -188,6 +213,8 @@ def main(argv: list[str] | None = None) -> int:
     tl.add_argument("-F", "--no-field-data-mapping", action="store_true")
     tl.add_argument("--no-pwsh-field-extraction", action="store_true")
     tl.add_argument("--no-index", action="store_true", help="Evaluate every rule on every event (slower; for verification)")
+    tl.add_argument("-w", "--workers", type=int, default=1, help="Scan with this many processes (0 = one per core, 1 = in-process)")
+    tl.add_argument("--split-over", type=int, default=200_000, help="Split a file with more than this many records into record ranges (0 disables)")
     tl.add_argument("-q", "--quiet", action="store_true")
     tl.add_argument("-N", "--no-summary", action="store_true")
     args = parser.parse_args(argv)
@@ -281,17 +308,56 @@ def main(argv: list[str] | None = None) -> int:
         print("Scanning in progress. Please wait.")
 
     detector = Detector(rule_set, config, use_index=not args.no_index, json_input_flag=args.json_input, log=log_lines.append)
-    detections: list[Detection] = []
-    for path in files:
-        try:
-            detections.extend(detector.scan_records(str(path), reader(path)))
-        except EvtxReadError as exc:
-            # One unreadable file must not lose the rest of the upload (Hayabusa logs and moves on).
-            log_lines.append(f"[ERROR] {exc}")
-            print(f"[ERROR] {exc}", file=sys.stderr)
-    detections.extend(detector.finish())
-
-    infos = [render(det, out_cfg, config.eventkey_alias) for det in detections]
+    workers = worker_count(args.workers) if args.workers != 1 else 1
+    infos: list[DetectInfo] = []
+    if workers > 1:
+        setup = WorkerSetup(
+            rules_path=str(rules_path),
+            rules_config_dir=str(rules_config),
+            config_dir=str(config_dir),
+            expand_dir=str(config_dir / "expand"),
+            filter_options=options,
+            profile=args.profile,
+            time_format=time_format,
+            json_timeline=fmt != "csv",
+            reader=reader_kind(args),
+            json_input_flag=args.json_input,
+            use_index=not args.no_index,
+            disable_abbreviation=args.disable_abbreviations,
+            no_field_data_mapping=args.no_field_data_mapping,
+            output_to_file=args.output is not None,
+            keep_rule_paths=frozenset(rule.rule_path for rule in rule_set.rules),
+        )
+        jobs = split_jobs(
+            [(str(path), str(path)) for path in files],
+            workers=workers,
+            split_over=args.split_over if setup.reader == "evtx" else 0,
+            count_records=_record_counter() if setup.reader == "evtx" else None,
+        )
+        if not args.quiet:
+            print(f"Scanning with {workers} processes ({len(jobs)} jobs).")
+        fragments = []
+        for result in scan_jobs(jobs, setup, workers=workers):
+            infos.extend(result.rows)
+            fragments.append(result.countdata)
+            log_lines.extend(result.log_lines)
+            detector.stats.merge(result.stats)
+            if result.error:
+                log_lines.append(f"[ERROR] {result.error}")
+                print(f"[ERROR] {result.error}", file=sys.stderr)
+        merge_countdata(rule_set.rules, fragments)
+        infos.extend(render(det, out_cfg, config.eventkey_alias) for det in detector.finish())
+    else:
+        detections: list[Detection] = []
+        for path in files:
+            try:
+                detections.extend(detector.scan_records(str(path), reader(path)))
+            except EvtxReadError as exc:
+                # One unreadable file must not lose the rest of the upload (Hayabusa logs and moves on).
+                log_lines.append(f"[ERROR] {exc}")
+                print(f"[ERROR] {exc}", file=sys.stderr)
+        detections.extend(detector.finish())
+        infos = [render(det, out_cfg, config.eventkey_alias) for det in detections]
     infos.sort(key=sort_key)
     if args.remove_duplicate_detections:
         skip = duplicate_indices(infos)

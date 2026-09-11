@@ -1,0 +1,24 @@
+{
+  "events": 47699,
+  "files": 599,
+  "python": [
+    {
+      "workers": 1,
+      "rules_seconds": 5.4,
+      "scan_seconds": 129.5,
+      "detections": 32447,
+      "peak_rss_mb": 529
+    },
+    {
+      "workers": 2,
+      "rules_seconds": 5.2,
+      "scan_seconds": 92.2,
+      "detections": 32447,
+      "peak_rss_mb": 529
+    }
+  ],
+  "hayabusa": {
+    "seconds": 45.8,
+    "detections": 32447
+  }
+}
