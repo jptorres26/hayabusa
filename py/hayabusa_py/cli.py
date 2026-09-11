@@ -20,6 +20,7 @@ from typing import Any
 
 from hayabusa_py.engine.detect import Detection, Detector, RuleSet, load_rule_set
 from hayabusa_py.engine.timeutil import TimeFormatOptions
+from hayabusa_py.evtx.errors import EvtxReadError
 from hayabusa_py.evtx.jsonl_reader import (
     iter_fixture_records,
     iter_json_records,
@@ -63,7 +64,7 @@ def collect_files(paths: list[Path], extensions: set[str]) -> list[Path]:
     return files
 
 
-def make_reader(args: argparse.Namespace) -> tuple[Callable[[Path], Iterator[Any]], set[str]]:
+def make_reader(args: argparse.Namespace, log: Callable[[str], None] = lambda _line: None) -> tuple[Callable[[Path], Iterator[Any]], set[str]]:
     if args.evtx_jsonl:
         return iter_fixture_records, {"jsonl"}
     if args.json_input:
@@ -75,7 +76,11 @@ def make_reader(args: argparse.Namespace) -> tuple[Callable[[Path], Iterator[Any
     if sys.platform == "win32":
         from hayabusa_py.evtx.wevtapi_reader import iter_evtx_records
 
-        return iter_evtx_records, {"evtx"} | set(args.target_file_ext or [])
+        def read_evtx(path: Path) -> Iterator[Any]:
+            # Per-record render failures go to the error log; the rest of the file is still read.
+            return iter_evtx_records(path, on_error=log)
+
+        return read_evtx, {"evtx"} | set(args.target_file_ext or [])
     raise SystemExit("[ERROR] Reading .evtx files needs the Windows Event Log API; on this platform use -J (JSON input) or --evtx-jsonl.")
 
 
@@ -200,7 +205,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.quiet:
         print(f"Start time: {time.strftime('%Y/%m/%d %H:%M')}")
 
-    reader, extensions = make_reader(args)
+    reader, extensions = make_reader(args, log_lines.append)
     files = collect_files([args.directory or args.file], extensions)
     if not args.quiet:
         print(f"Total event log files: {len(files)}")
@@ -278,7 +283,12 @@ def main(argv: list[str] | None = None) -> int:
     detector = Detector(rule_set, config, use_index=not args.no_index, json_input_flag=args.json_input, log=log_lines.append)
     detections: list[Detection] = []
     for path in files:
-        detections.extend(detector.scan_records(str(path), reader(path)))
+        try:
+            detections.extend(detector.scan_records(str(path), reader(path)))
+        except EvtxReadError as exc:
+            # One unreadable file must not lose the rest of the upload (Hayabusa logs and moves on).
+            log_lines.append(f"[ERROR] {exc}")
+            print(f"[ERROR] {exc}", file=sys.stderr)
     detections.extend(detector.finish())
 
     infos = [render(det, out_cfg, config.eventkey_alias) for det in detections]
