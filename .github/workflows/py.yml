@@ -1,0 +1,115 @@
+name: hayabusa-py
+
+# CI for the Python + PowerShell rewrite under py/. The Rust workflows are untouched.
+#
+# ubuntu  - lint, unit tests and a dependency audit; nothing here needs a binary or a corpus.
+#           (The engine differential against the committed Hayabusa goldens is run by hand for
+#           now: it needs the rule set the goldens were generated with, not the submodule's.)
+# windows - the same unit tests plus the part that can only run on Windows: reading real
+#           .evtx files through the Windows Event Log API and comparing every record with
+#           the evtx crate revision Hayabusa pins.
+
+on:
+  push:
+    paths:
+      - "py/**"
+      - ".github/workflows/py.yml"
+  pull_request:
+    paths:
+      - "py/**"
+      - ".github/workflows/py.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# TODO: pin the third-party actions below to commit SHAs (as the Rust workflows do) once the
+# current release digests can be looked up.
+
+env:
+  # The hayabusa-evtx revision pinned in Cargo.toml; the Windows job builds its evtx_dump
+  # to produce the reference records. Keep in sync with Cargo.toml.
+  HAYABUSA_EVTX_REV: 31be1c39b7add607eca7b789302423b38a8646da
+  SAMPLE_EVTX_REV: 0845333ecb4afcf64c55c6e10946383f168f308c
+
+jobs:
+  lint-and-test:
+    name: lint + unit tests (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: py/uv.lock
+      - name: Sync dependencies
+        working-directory: py
+        run: uv sync --all-extras --dev
+      - name: Ruff
+        working-directory: py
+        run: uv run ruff check .
+      - name: Unit tests
+        working-directory: py
+        run: uv run pytest tests/unit -q
+      # Audit the locked dependency set (the project itself is editable, which pip-audit
+      # cannot resolve, so export the lock and audit that).
+      - name: Audit dependencies
+        working-directory: py
+        run: |
+          uv export --format requirements-txt --no-emit-project --all-extras --no-hashes > requirements.lock.txt
+          uv run pip-audit --strict -r requirements.lock.txt
+
+  windows-reader:
+    name: Windows Event Log API reader
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: py/uv.lock
+      - name: Sync dependencies
+        working-directory: py
+        run: uv sync --all-extras --dev
+
+      - name: Unit tests
+        working-directory: py
+        run: uv run pytest tests/unit -q
+
+      # A real log from this runner: no sample files are vendored into the repo, and this also
+      # proves the reader works on a log the machine itself wrote.
+      - name: Export a live channel and read it
+        working-directory: py
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path live | Out-Null
+          wevtutil epl Application live/Application.evtx /ow:true
+          uv run python tests/windows/smoke_reader.py live/Application.evtx
+
+      - name: Cache the pinned evtx_dump
+        id: cache-evtx-dump
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/evtx_dump.exe
+          key: evtx_dump-${{ env.HAYABUSA_EVTX_REV }}-${{ runner.os }}
+
+      - name: Build the pinned evtx_dump
+        if: steps.cache-evtx-dump.outputs.cache-hit != 'true'
+        run: cargo install --git https://github.com/Yamato-Security/hayabusa-evtx.git --rev ${{ env.HAYABUSA_EVTX_REV }} --bin evtx_dump --locked evtx
+
+      - name: Fetch the sample corpus
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/Yamato-Security/hayabusa-sample-evtx.git sample
+          cd sample
+          git checkout ${{ env.SAMPLE_EVTX_REV }}
+
+      - name: Record parity vs the evtx crate
+        working-directory: py
+        run: uv run python tests/differential/wevtapi_parity.py --corpus ../sample --json-dump evtx_dump --limit 40 --report wevtapi-parity.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wevtapi-parity
+          path: py/wevtapi-parity.txt
+          if-no-files-found: ignore
