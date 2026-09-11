@@ -60,6 +60,7 @@ class WorkerSetup:
     # loader returns". Without this a worker would scan with rules the parent had pruned.
     keep_rule_paths: frozenset[str] | None = None
     json_input_flag: bool = False
+    no_pwsh_field_extraction: bool = False
     use_index: bool = True
     disable_abbreviation: bool = False
     no_field_data_mapping: bool = False
@@ -97,6 +98,7 @@ class _Engine:
             self.config,
             use_index=setup.use_index,
             json_input_flag=setup.json_input_flag,
+            no_pwsh_field_extraction=setup.no_pwsh_field_extraction,
             log=self.log_lines.append,
         )
         self.out_cfg = OutputConfig.load(

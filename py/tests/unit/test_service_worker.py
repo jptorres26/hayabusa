@@ -194,3 +194,44 @@ def test_retention_leaves_active_jobs_alone(config: ServiceConfig) -> None:
     time.sleep(0.01)
     assert apply_retention(config, store) == []
     assert store.get(queued.id) is not None
+
+
+def test_two_workers_sharing_a_queue_each_take_different_jobs(config: ServiceConfig, monkeypatch) -> None:
+    """Two worker processes is the expected deployment shape; no job may be scanned twice."""
+    import threading
+
+    store = JobStore(config.db_path)
+    jobs = [store.create(filename=f"{n}.evtx", size_bytes=8, sha256="0" * 64) for n in range(8)]
+    for job in jobs:
+        path = config.job_upload_dir(job.id) / "upload.bin"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(EVTX_MAGIC)
+
+    ran: list[str] = []
+    lock = threading.Lock()
+
+    def fake_run(job_id, stored, cfg, **kwargs):
+        with lock:
+            ran.append(job_id)
+        time.sleep(0.01)
+        from service.runner import JobOutcome
+
+        return JobOutcome(summary={"detections": 0})
+
+    monkeypatch.setattr("service.worker.run_job", fake_run)
+
+    def drain() -> None:
+        worker = Worker(config, store=JobStore(config.db_path))
+        while worker.run_once():
+            pass
+
+    threads = [threading.Thread(target=drain) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    assert sorted(ran) == sorted(job.id for job in jobs)
+    assert len(ran) == len(set(ran)), "a job was scanned more than once"
+    assert all(store.get(job.id).state == DONE for job in jobs)
+    assert all(store.get(job.id).attempts == 1 for job in jobs)

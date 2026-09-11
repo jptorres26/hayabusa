@@ -120,11 +120,12 @@ class Detector:
     accumulate in their ``countdata`` and are resolved by :meth:`finish`.
     """
 
-    def __init__(self, rule_set: RuleSet, config: RulesConfig, *, use_index: bool = True, json_input_flag: bool = False, log: Logger = None) -> None:
+    def __init__(self, rule_set: RuleSet, config: RulesConfig, *, use_index: bool = True, json_input_flag: bool = False, no_pwsh_field_extraction: bool = False, log: Logger = None) -> None:
         self.rule_set = rule_set
         self.config = config
         self.alias = config.eventkey_alias
         self.json_input_flag = json_input_flag
+        self.no_pwsh_field_extraction = no_pwsh_field_extraction
         self.log = log
         self.stats = ScanStats()
         self.index = RuleIndex.build(rule_set.rules, self.alias) if use_index else RuleIndex.without_index(rule_set.rules)
@@ -140,7 +141,13 @@ class Detector:
         started = time.perf_counter()
         for data in records:
             stats.events += 1
-            info = create_lazy_rec_info(data, evtx_filepath, alias, recovered_record=recovered)
+            info = create_lazy_rec_info(
+                data,
+                evtx_filepath,
+                alias,
+                recovered_record=recovered,
+                no_pwsh_field_extraction=self.no_pwsh_field_extraction,
+            )
             hit = False
             candidates = self.index.candidates(info)
             stats.rules_evaluated += len(candidates)

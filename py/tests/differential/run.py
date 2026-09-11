@@ -144,7 +144,7 @@ def main() -> int:
     golden_path = PY_ROOT / "tests" / "golden" / args.corpus / args.mode / "timeline.super-verbose.jsonl"
     gold_records, gold_agg, gold_rows = load_golden(golden_path)
     if args.limit:
-        scanned = {f.relative_to(PY_ROOT / "tests" / "fixtures" / "records").as_posix()[: -len(".jsonl")] for f in fixtures}
+        scanned = {f.relative_to(records_root).as_posix()[: -len(".jsonl")] for f in fixtures}
         gold_records = {k for k in gold_records if k[1] in scanned}
         gold_agg = {k for k in gold_agg if k[1] in scanned}
 

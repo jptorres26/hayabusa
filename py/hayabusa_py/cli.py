@@ -211,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
     tl.add_argument("--european-time", action="store_true")
     tl.add_argument("-b", "--disable-abbreviations", action="store_true")
     tl.add_argument("-F", "--no-field-data-mapping", action="store_true")
-    tl.add_argument("--no-pwsh-field-extraction", action="store_true")
+    tl.add_argument("--no-pwsh-field-extraction", action="store_true", help="Do not split classic PowerShell (400/403/600/800) message blobs into fields")
     tl.add_argument("--no-index", action="store_true", help="Evaluate every rule on every event (slower; for verification)")
     tl.add_argument("-w", "--workers", type=int, default=1, help="Scan with this many processes (0 = one per core, 1 = in-process)")
     tl.add_argument("--split-over", type=int, default=200_000, help="Split a file with more than this many records into record ranges (0 disables)")
@@ -307,7 +307,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Output profile: {args.profile or 'default'}")
         print("Scanning in progress. Please wait.")
 
-    detector = Detector(rule_set, config, use_index=not args.no_index, json_input_flag=args.json_input, log=log_lines.append)
+    detector = Detector(
+        rule_set,
+        config,
+        use_index=not args.no_index,
+        json_input_flag=args.json_input,
+        no_pwsh_field_extraction=args.no_pwsh_field_extraction,
+        log=log_lines.append,
+    )
     workers = worker_count(args.workers) if args.workers != 1 else 1
     infos: list[DetectInfo] = []
     if workers > 1:
@@ -322,6 +329,7 @@ def main(argv: list[str] | None = None) -> int:
             json_timeline=fmt != "csv",
             reader=reader_kind(args),
             json_input_flag=args.json_input,
+            no_pwsh_field_extraction=args.no_pwsh_field_extraction,
             use_index=not args.no_index,
             disable_abbreviation=args.disable_abbreviations,
             no_field_data_mapping=args.no_field_data_mapping,
