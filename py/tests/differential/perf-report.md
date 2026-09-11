@@ -47,9 +47,23 @@ before treating it as a decision.
 
 ## Memory
 
-Peak RSS reached 1.6 GB for 144,720 detections, about 11 KB per rendered row. The scan holds
-every rendered row in memory until the timeline is sorted, so memory tracks the number of
-*detections*, not the size of the log. This corpus is deliberately detection-dense (73% of its
-events match at least one rule, mostly informational); a typical Security log is far less dense.
-If a real workload does turn out to be both large and dense, the fix is to have each worker write
-its own sorted timeline and merge them on disk, which trades a little wall clock for flat memory.
+The first Security-scale run peaked at 1.6 GB of RSS for 144,720 detections, about 11 KB per
+rendered row, because every row was held until the timeline could be sorted. Memory tracked the
+number of *detections* rather than the size of the log — fine for a corpus scan, not fine for a
+service whose upload cap allows logs that could produce far more.
+
+Rows are now written out in sorted runs as they are rendered (20,000 at a time) and merged when
+the results are written, so memory is bounded by the flush interval instead. The same load now
+peaks at **941 MB**, and finished slightly faster (1,405 s against 1,537 s) since less is being
+kept alive for the garbage collector to walk:
+
+| version | peak RSS | wall | detections |
+| --- | ---: | ---: | ---: |
+| rows held until sorted | 1,639 MB | 1,537 s | 144,720 |
+| spooled per finished job | 1,274 MB | — | 144,720 |
+| spooled as rendered (current) | 941 MB | 1,405 s | 144,720 |
+
+What remains is largely the fixed cost of the rule set: the mixed-corpus scan, with a fraction of
+the detections, peaks at 529 MB. So memory now scales with the rules loaded, which is constant,
+rather than with what is found in the log. The spooled output is byte-identical to sorting in
+memory — verified on a 9,648-row timeline, same rows in the same order.
