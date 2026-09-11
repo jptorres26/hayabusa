@@ -53,6 +53,22 @@ jobs:
         run: uv run pytest tests/unit -q
       # Audit the locked dependency set (the project itself is editable, which pip-audit
       # cannot resolve, so export the lock and audit that).
+      - name: Check the PowerShell scripts
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $failed = $false
+          Get-ChildItem -Recurse -Filter *.ps1 py | ForEach-Object {
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$parseErrors) | Out-Null
+            if ($parseErrors.Count -gt 0) {
+              $failed = $true
+              Write-Host "::error file=$($_.FullName)::$($parseErrors[0].Message)"
+            }
+          }
+          if ($failed) { exit 1 }
+          Write-Host "all scripts parse"
+
       - name: Audit dependencies
         working-directory: py
         run: |
@@ -75,6 +91,14 @@ jobs:
       - name: Unit tests
         working-directory: py
         run: uv run pytest tests/unit -q
+
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
+          $results = Invoke-ScriptAnalyzer -Path py -Recurse -Severity Error,Warning
+          $results | Format-Table -AutoSize
+          if ($results | Where-Object Severity -eq 'Error') { exit 1 }
 
       # A real log from this runner: no sample files are vendored into the repo, and this also
       # proves the reader works on a log the machine itself wrote.
