@@ -24,7 +24,7 @@ sys.path.insert(0, str(PY_ROOT))
 
 from hayabusa_py.engine.detect import Detector, load_rule_set  # noqa: E402
 from hayabusa_py.engine.timeutil import TimeFormatOptions, format_time  # noqa: E402
-from hayabusa_py.evtx.jsonl_reader import iter_fixture_records  # noqa: E402
+from hayabusa_py.evtx.jsonl_reader import iter_fixture_records, iter_jsonl_records  # noqa: E402
 from hayabusa_py.rules.config import RulesConfig  # noqa: E402
 from hayabusa_py.rules.loader import RuleFilterOptions  # noqa: E402
 
@@ -99,6 +99,8 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=0, help="only the first N fixture files")
     parser.add_argument("--render", default=None, choices=["jsonl", "csv"], help="also render the timeline and diff it against the golden file")
     parser.add_argument("--profile", default="super-verbose")
+    parser.add_argument("--records-root", default=None, help="directory of <corpus>/**.evtx.jsonl record files (default tests/fixtures/records)")
+    parser.add_argument("--record-format", default="evtx_dump", choices=["evtx_dump", "raw"], help="evtx_dump: normalize the 0.12 JSON layout; raw: records are already in the engine's layout")
     args = parser.parse_args()
 
     rules_dir = Path(args.rules)
@@ -112,7 +114,9 @@ def main() -> int:
     detector = Detector(rule_set, config, use_index=not args.no_index)
     print(f"index: {detector.index.describe()}")
 
-    fixtures = sorted((PY_ROOT / "tests" / "fixtures" / "records" / args.corpus).rglob("*.evtx.jsonl"))
+    records_root = Path(args.records_root) if args.records_root else PY_ROOT / "tests" / "fixtures" / "records"
+    read_records = iter_fixture_records if args.record_format == "evtx_dump" else iter_jsonl_records
+    fixtures = sorted((records_root / args.corpus).rglob("*.evtx.jsonl"))
     if args.limit:
         fixtures = fixtures[: args.limit]
     ours_records: set[tuple] = set()
@@ -120,8 +124,8 @@ def main() -> int:
     detections = []
     t1 = time.perf_counter()
     for fixture in fixtures:
-        rel = fixture.relative_to(PY_ROOT / "tests" / "fixtures" / "records").as_posix()[: -len(".jsonl")]
-        for det in detector.scan_records(rel, iter_fixture_records(fixture)):
+        rel = fixture.relative_to(records_root).as_posix()[: -len(".jsonl")]
+        for det in detector.scan_records(rel, read_records(fixture)):
             record_id = det.record.record.get("Event", {}).get("System", {}).get("EventRecordID")
             ours_records.add((det.rule.rule_id, rel, str(record_id)))
             if args.render:
